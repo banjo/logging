@@ -30,6 +30,7 @@ export type ContextLogger<TWideEventFields extends LogContext = LogContext> = {
   fatal: LogMessageMethod<TWideEventFields>;
   child: (source: string) => ContextLogger<TWideEventFields>;
   addContext: (fields: LogFields<TWideEventFields>) => void;
+  addError: (error: Error, fields?: LogFields<TWideEventFields>) => void;
   emit: (fields?: LogFields<TWideEventFields>) => void;
 };
 

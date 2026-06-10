@@ -46,16 +46,24 @@ dbLogger.emit({ durationMs: 12 });
 
 ## Error Logs
 
+Add errors to the final wide event:
+
 ```ts
 try {
   await saveOrder();
 } catch (error) {
   if (error instanceof Error) {
-    logger.error(error, { orderId: "order_123" });
+    logger.addError(error, { orderId: "order_123" });
   }
 
   logger.emit({ statusCode: 500 });
 }
+```
+
+Log an immediate escape-hatch error:
+
+```ts
+logger.error(error, { orderId: "order_123" });
 ```
 
 ## Pino Options

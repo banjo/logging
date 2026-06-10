@@ -144,6 +144,16 @@ export const createLoggerKit = <
       logContext.addContext(fields);
     };
 
+    const addError = (
+      err: Error,
+      fields?: LogFields<TWideEventFields>,
+    ): void => {
+      logContext.addContext({
+        ...formatError(err),
+        ...fields,
+      } as LogFields<TWideEventFields>);
+    };
+
     const emit = (fields?: LogFields<TWideEventFields>): void => {
       const stored = logContext.get();
       const event = { source, ...stored, ...fields };
@@ -151,7 +161,7 @@ export const createLoggerKit = <
       instance[level](event as LogContext, resolvedConfig.emitMessage);
     };
 
-    return { debug, info, warn, error, fatal, child, addContext, emit };
+    return { debug, info, warn, error, fatal, child, addContext, addError, emit };
   };
 
   return { createLogger, logContext };
