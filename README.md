@@ -8,7 +8,7 @@ Why this is useful:
 
 - One wide event per request or job.
 - Request context follows async code automatically.
-- Simple setup and API
+- Simple setup and API.
 - Built on Pino, so you get all the benefits of a battle-tested logger and ecosystem.
 
 ## Install
@@ -19,29 +19,191 @@ pnpm add @banjoanton/logging
 
 ## Basic Usage
 
+Create one logger kit for the whole app. Each file creates its own `logger` with a source name.
+
 ```ts
 import { createLoggerKit, type BaseWideEventFields } from "@banjoanton/logging";
 
-type LogFields = BaseWideEventFields & {
+type AppLogFields = BaseWideEventFields & {
+  userId?: string;
   companyId?: string;
-  orderId?: string;
+  action?: "user.create";
 };
 
-const { createLogger, logContext } = createLoggerKit<LogFields>({
-  name: "api",
-  emitMessage: "request",
+export const { createLogger, logContext } = createLoggerKit<AppLogFields>({
+  name: "my-app",
+  emitMessage: "request complete",
 });
+```
 
-const logger = createLogger("request");
+```ts
+import { createLogger, logContext } from "./logging";
 
-await logContext.run({ requestId: crypto.randomUUID(), path: "/orders" }, async () => {
-  logger.addContext({ companyId: "company_123" });
+const logger = createLogger("user-service");
 
-  logger.emit({
-    statusCode: 200,
-    durationMs: 42,
-  });
+await logContext.run(
+  { requestId: crypto.randomUUID(), method: "POST", path: "/users" },
+  async () => {
+    logger.addContext({
+      action: "user.create",
+      companyId: "company_123",
+      userId: "user_123",
+    });
+
+    logger.emit({
+      statusCode: 201,
+      durationMs: 42,
+    });
+  },
+);
+```
+
+## Complete Example: Hono Middleware + User Service
+
+Create the kit once for the whole app, add request context in middleware, then let services add domain-specific fields while the request runs.
+
+### `logging.ts`
+
+```ts
+import { createLoggerKit, type BaseWideEventFields } from "@banjoanton/logging";
+
+type AppLogFields = BaseWideEventFields & {
+  userId?: string;
+  email?: string;
+  action?: "user.create";
+};
+
+export const { createLogger, logContext } = createLoggerKit<AppLogFields>({
+  name: "my-app",
+  emitMessage: "request complete",
+  pretty: false,
 });
+```
+
+### `middleware/request-logger.ts`
+
+```ts
+import { createLogger, logContext } from "../logging";
+
+const logger = createLogger("http");
+
+export async function requestLogger(c, next) {
+  const start = Date.now();
+
+  await logContext.run(
+    {
+      requestId: crypto.randomUUID(),
+      method: c.req.method,
+      path: c.req.path,
+    },
+    async () => {
+      try {
+        await next();
+
+        logger.emit({
+          statusCode: c.res.status,
+          durationMs: Date.now() - start,
+        });
+      } catch (error) {
+        if (error instanceof Error) {
+          logger.addError(error);
+        }
+
+        logger.emit({
+          statusCode: 500,
+          durationMs: Date.now() - start,
+        });
+
+        throw error;
+      }
+    },
+  );
+}
+```
+
+### `services/user-service.ts`
+
+```ts
+import { createLogger } from "../logging";
+
+const logger = createLogger("user-service");
+
+export class UserService {
+  async createUser(input: { email: string }) {
+    const user = {
+      id: crypto.randomUUID(),
+      email: input.email,
+    };
+
+    logger.addContext({
+      action: "user.create",
+      userId: user.id,
+      email: user.email,
+    });
+
+    return user;
+  }
+}
+```
+
+### `routes/users.ts`
+
+```ts
+import { Hono } from "hono";
+import { UserService } from "../services/user-service";
+
+const userService = new UserService();
+export const users = new Hono();
+
+users.post("/users", async (c) => {
+  const body = await c.req.json<{ email: string }>();
+  const user = await userService.createUser(body);
+
+  return c.json(user, 201);
+});
+```
+
+### `app.ts`
+
+```ts
+import { Hono } from "hono";
+import { requestLogger } from "./middleware/request-logger";
+import { users } from "./routes/users";
+
+const app = new Hono();
+
+app.use(requestLogger);
+app.route("/", users);
+```
+
+Example request:
+
+```bash
+curl -X POST http://localhost:3000/users \
+  -H 'content-type: application/json' \
+  -d '{"email":"ada@example.com"}'
+```
+
+Example log output:
+
+```json
+{
+  "level": 30,
+  "time": "2026-06-11T09:15:42.123Z",
+  "pid": 12345,
+  "hostname": "hermes",
+  "name": "my-app",
+  "source": "http",
+  "requestId": "78d2f8a5-b1b2-4a0e-9c2d-2f6c4b8c4d91",
+  "method": "POST",
+  "path": "/users",
+  "action": "user.create",
+  "userId": "6d5c9b8a-9f7f-4c8a-a0c1-99f2d6f0b2a4",
+  "email": "ada@example.com",
+  "statusCode": 201,
+  "durationMs": 18,
+  "msg": "request complete"
+}
 ```
 
 ## Child Loggers
@@ -50,7 +212,7 @@ await logContext.run({ requestId: crypto.randomUUID(), path: "/orders" }, async 
 const dbLogger = logger.child("db");
 
 dbLogger.emit({ durationMs: 12 });
-// source: "request.db"
+// source: "user-service.db"
 ```
 
 ## Error Logs
@@ -83,10 +245,10 @@ import { createLoggerKit, type BaseWideEventFields } from "@banjoanton/logging";
 
 const { createLogger, logContext } = createLoggerKit<BaseWideEventFields>({
   name: "api",
-  emitMessage: "request",
+  emitMessage: "request complete",
 });
 
-const logger = createLogger("request");
+const logger = createLogger("http");
 const app = new Hono();
 
 app.use(async (c, next) => {
