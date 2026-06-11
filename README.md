@@ -2,6 +2,15 @@
 
 Small structured logger for request-scoped wide events. Built on Pino.
 
+Inspired by [Logging Sucks](https://loggingsucks.com/).
+
+Why this is useful:
+
+- One wide event per request or job.
+- Request context follows async code automatically.
+- Simple setup and API
+- Built on Pino, so you get all the benefits of a battle-tested logger and ecosystem.
+
 ## Install
 
 ```bash
@@ -64,6 +73,41 @@ Log an immediate escape-hatch error:
 
 ```ts
 logger.error(error, { orderId: "order_123" });
+```
+
+## Hono Middleware
+
+```ts
+import { Hono } from "hono";
+import { createLoggerKit, type BaseWideEventFields } from "@banjoanton/logging";
+
+const { createLogger, logContext } = createLoggerKit<BaseWideEventFields>({
+  name: "api",
+  emitMessage: "request",
+});
+
+const logger = createLogger("request");
+const app = new Hono();
+
+app.use(async (c, next) => {
+  const start = Date.now();
+
+  await logContext.run(
+    { requestId: crypto.randomUUID(), method: c.req.method, path: c.req.path },
+    async () => {
+      try {
+        await next();
+        logger.emit({ statusCode: c.res.status, durationMs: Date.now() - start });
+      } catch (error) {
+        if (error instanceof Error) {
+          logger.addError(error);
+        }
+        logger.emit({ statusCode: 500, durationMs: Date.now() - start });
+        throw error;
+      }
+    },
+  );
+});
 ```
 
 ## Pino Options
