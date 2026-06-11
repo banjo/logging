@@ -1,6 +1,6 @@
 {
   "name": "@banjoanton/logging",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Small structured logger for request-scoped wide events.",
   "author": "Anton Ödman <anton.odman@gmail.com>",
   "license": "MIT",
